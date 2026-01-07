@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Tournament, Item } from '@/lib/types';
 import { getTournament } from '@/lib/database';
+import { getTournamentFromStorage, updateTournamentInStorage } from '@/lib/storage';
 
 export default function VotePage() {
   const params = useParams();
@@ -17,7 +18,17 @@ export default function VotePage() {
   const [loading, setLoading] = useState(true);
 
   const loadTournament = () => {
-    const data = getTournament(tournamentId);
+    // Try server-side first
+    let data = getTournament(tournamentId);
+    
+    // Fallback to localStorage if server data not available
+    if (!data) {
+      const storedData = getTournamentFromStorage(tournamentId);
+      if (storedData) {
+        data = storedData;
+      }
+    }
+    
     if (data) {
       setTournament(data);
       setCurrentPair(getRandomPair(data.items));
@@ -50,6 +61,22 @@ export default function VotePage() {
       });
       
       if (response.ok) {
+        const data = await response.json();
+        
+        // Update localStorage with new scores
+        const updatedTournament = { ...tournament };
+        const winnerItem = updatedTournament.items.find(item => item.id === winnerId);
+        const loserItem = updatedTournament.items.find(item => item.id === loserId);
+        
+        if (winnerItem && loserItem && data.result) {
+          winnerItem.eloScore = data.result.winnerNewScore;
+          winnerItem.wins += 1;
+          loserItem.eloScore = data.result.loserNewScore;
+          loserItem.losses += 1;
+          updatedTournament.totalVotes += 1;
+          updateTournamentInStorage(updatedTournament);
+        }
+        
         setVoteCount(prev => prev + 1);
         // Reload tournament data and get new pair
         loadTournament();

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateDefaultContenders } from '@/lib/contenders';
+import { saveTournamentToStorage } from '@/lib/storage';
 
 export default function Home() {
   const router = useRouter();
@@ -31,6 +32,21 @@ export default function Home() {
       
       const data = await response.json();
       if (data.success) {
+        // Also save to localStorage for persistence
+        const tournament = {
+          id: data.tournamentId,
+          topic,
+          items: items.map(item => ({
+            ...item,
+            eloScore: 1500,
+            wins: 0,
+            losses: 0,
+          })),
+          createdAt: new Date(),
+          totalVotes: 0,
+        };
+        saveTournamentToStorage(tournament);
+        
         router.push(`/vote/${data.tournamentId}`);
       }
     } catch (error) {

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Tournament, Item } from '@/lib/types';
-import { getTournament, getLeaderboard } from '@/lib/database';
+import { getTournament } from '@/lib/database';
+import { getTournamentFromStorage } from '@/lib/storage';
 
 export default function ResultsPage() {
   const params = useParams();
@@ -15,10 +16,22 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true);
 
   const loadResults = () => {
-    const data = getTournament(tournamentId);
+    // Try server-side first
+    let data = getTournament(tournamentId);
+    
+    // Fallback to localStorage if server data not available
+    if (!data) {
+      const storedData = getTournamentFromStorage(tournamentId);
+      if (storedData) {
+        data = storedData;
+      }
+    }
+    
     if (data) {
       setTournament(data);
-      setLeaderboard(getLeaderboard(tournamentId));
+      // Sort items by ELO score for leaderboard
+      const sorted = [...data.items].sort((a, b) => b.eloScore - a.eloScore);
+      setLeaderboard(sorted);
       setLoading(false);
     } else {
       setLoading(false);
