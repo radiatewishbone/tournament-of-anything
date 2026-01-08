@@ -25,6 +25,12 @@ const schema = {
   },
 };
 
+// Interface to fix the "Unexpected any" error
+interface AIItem {
+  name: string;
+  imagePrompt: string;
+}
+
 export async function generateAIContenders(topic: string) {
   if (!process.env.GEMINI_API_KEY) {
     console.warn("GEMINI_API_KEY is missing. Falling back to default data.");
@@ -46,10 +52,10 @@ export async function generateAIContenders(topic: string) {
 
     const result = await model.generateContent(prompt);
     const response = result.response;
-    const items = JSON.parse(response.text());
+    const items = JSON.parse(response.text()) as AIItem[];
 
     // Transform into the app's internal format
-    return items.map((item: any, index: number) => ({
+    return items.map((item, index) => ({
       id: `ai-${index}-${Date.now()}`, // Unique ID
       name: item.name,
       // We use Pollinations.ai (free, no key needed) to generate images on the fly via URL
