@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createTournament } from '@/lib/database';
-import { generateDefaultContenders } from '@/lib/contenders';
+import { generateDefaultContenders } from '@/lib/contenders'; //
+import { generateAIContenders } from '@/lib/ai';
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,18 +9,25 @@ export async function POST(request: NextRequest) {
     const { topic, items } = body;
     
     if (!topic || typeof topic !== 'string') {
-      return NextResponse.json(
-        { error: 'Topic is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Topic is required' }, { status: 400 });
     }
     
-    // Use provided items or generate defaults
-    const contenders = items && items.length > 0 
-      ? items 
-      : generateDefaultContenders(topic);
+    let finalItems = items;
+
+    // If no manual items provided, try AI generation
+    if (!finalItems || finalItems.length === 0) {
+      // 1. Try AI Generation
+      const aiItems = await generateAIContenders(topic);
+      
+      if (aiItems) {
+        finalItems = aiItems;
+      } else {
+        // 2. Fallback to static list if AI fails
+        finalItems = generateDefaultContenders(topic);
+      }
+    }
     
-    const tournament = createTournament(topic, contenders);
+    const tournament = createTournament(topic, finalItems);
     
     return NextResponse.json({ 
       success: true, 
@@ -27,9 +35,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error creating tournament:', error);
-    return NextResponse.json(
-      { error: 'Failed to create tournament' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create tournament' }, { status: 500 });
   }
 }
