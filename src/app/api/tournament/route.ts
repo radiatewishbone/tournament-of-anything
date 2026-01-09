@@ -41,6 +41,9 @@ export async function GET(request: NextRequest) {
 // POST Handler: Creates a new tournament (AI or Default)
 // -----------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
+  // Correlate logs across async steps (safe to include in responses)
+  const requestId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+
   try {
     // 1. Parse Request Body
     const body = await request.json();
@@ -51,71 +54,75 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Topic is required' }, { status: 400 });
     }
     
-    console.log(`[API] Received request to create tournament for topic: "${topic}"`);
+    console.log(`[API][${requestId}] Received request to create tournament for topic: "${topic}"`);
 
     let finalItems = items;
 
     // 3. Generate Items (if not provided)
     if (!finalItems || finalItems.length === 0) {
       try {
-        console.log('[API] Attempting to generate AI contenders...');
+        console.log(`[API][${requestId}] Attempting to generate AI contenders...`);
         // Attempt AI generation
         const aiItems = await generateAIContenders(topic);
         
         if (aiItems && aiItems.length > 0) {
-          console.log(`[API] Successfully generated ${aiItems.length} AI items.`);
+          console.log(`[API][${requestId}] Successfully generated ${aiItems.length} AI items.`);
           finalItems = aiItems;
         } else {
-          console.warn('[API] AI returned no items. Falling back to defaults.');
+          console.warn(`[API][${requestId}] AI returned no items. Falling back to defaults.`);
           finalItems = generateDefaultContenders(topic);
         }
       } catch (aiError) {
         // CRITICAL: Catch AI errors so they don't crash the whole request
-        console.error('[API] AI Generation Failed:', aiError);
-        console.log('[API] Falling back to default contenders due to AI error.');
+        console.error(`[API][${requestId}] AI Generation Failed:`, aiError);
+        console.log(`[API][${requestId}] Falling back to default contenders due to AI error.`);
         finalItems = generateDefaultContenders(topic);
       }
     }
 
     // 4. Save to Database
     try {
-      console.log('[API] Saving tournament to database...');
+      console.log(`[API][${requestId}] Saving tournament to database...`);
       const tournament = await createTournament(topic, finalItems);
-      console.log(`[API] Tournament created successfully with ID: ${tournament.id}`);
+      console.log(`[API][${requestId}] Tournament created successfully with ID: ${tournament.id}`);
       
       return NextResponse.json({ 
         success: true, 
+        requestId,
         tournamentId: tournament.id,
         tournament: tournament 
       });
 
     } catch (dbError: unknown) {
       // 5. Handle Database Specific Errors
-      console.error('[API] Database Error:', dbError);
+      console.error(`[API][${requestId}] Database Error:`, dbError);
       
       const message = getErrorMessage(dbError);
       
       // Check if it's the specific "Missing Credentials" error we added earlier
       if (message.includes('Database credentials missing')) {
-         return NextResponse.json({ 
-           error: 'Server Configuration Error', 
-           message: 'Database credentials (UPSTASH_REDIS_REST_URL) are missing on the server.',
-           details: message
-         }, { status: 503 }); // 503 Service Unavailable
-      }
+          return NextResponse.json({ 
+            error: 'Server Configuration Error', 
+            message: 'Database credentials (UPSTASH_REDIS_REST_URL) are missing on the server.',
+            details: message,
+            requestId,
+          }, { status: 503 }); // 503 Service Unavailable
+       }
 
-      return NextResponse.json({ 
-        error: 'Failed to save tournament', 
-        details: message 
-      }, { status: 500 });
+       return NextResponse.json({ 
+         error: 'Failed to save tournament', 
+         details: message,
+         requestId,
+       }, { status: 500 });
     }
 
   } catch (error: unknown) {
     // 6. Catch-all for unexpected crashes
-    console.error('[API] Critical Error in POST handler:', error);
+    console.error(`[API][${requestId}] Critical Error in POST handler:`, error);
     return NextResponse.json({ 
       error: 'Internal Server Error',
-      details: getErrorMessage(error) 
+      details: getErrorMessage(error),
+      requestId,
     }, { status: 500 });
   }
 }

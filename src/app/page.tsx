@@ -3,6 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveTournamentToStorage } from '@/lib/storage'; // Import this utility
+import { generateDefaultContenders } from '@/lib/contenders';
+import type { Tournament } from '@/lib/types';
+
+function generateId(): string {
+  return Math.random().toString(36).substring(2, 9);
+}
 
 export default function Home() {
   const router = useRouter();
@@ -19,20 +25,44 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic }),
       });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        // CRITICAL FIX: Save the tournament to localStorage immediately.
-        // This ensures the data survives even if the server memory is wiped.
-        if (data.tournament) {
-          saveTournamentToStorage(data.tournament);
-        }
 
-        router.push(`/vote/${data.tournamentId}`);
+      // If the API fails (common in external deploys without DB), fall back to
+      // a local-only tournament stored in the browser.
+      if (!response.ok) {
+        throw new Error(`API responded with ${response.status}`);
       }
+
+      const data = await response.json();
+
+      if (data.success && data.tournamentId) {
+        // Save the tournament to localStorage immediately.
+        if (data.tournament) saveTournamentToStorage(data.tournament);
+        router.push(`/vote/${data.tournamentId}`);
+        return;
+      }
+
+      throw new Error('API did not return a tournament');
     } catch (error) {
-      console.error('Error creating tournament:', error);
+      console.warn('Create Tournament API failed; falling back to localStorage-only mode.', error);
+
+      const id = generateId();
+      const baseItems = generateDefaultContenders(topic);
+      const tournament: Tournament = {
+        id,
+        topic,
+        items: baseItems.map(item => ({
+          ...item,
+          eloScore: 1500,
+          wins: 0,
+          losses: 0,
+        })),
+        createdAt: new Date(),
+        totalVotes: 0,
+      };
+
+      saveTournamentToStorage(tournament);
+      router.push(`/vote/${id}`);
+    } finally {
       setIsGenerating(false);
     }
   };

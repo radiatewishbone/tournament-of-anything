@@ -14,21 +14,27 @@ export default function ResultsPage() {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [leaderboard, setLeaderboard] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [storageMode, setStorageMode] = useState<'server' | 'local' | null>(null);
 
   const loadResults = useCallback(async () => {
     try {
       // 1. Try to fetch from the server (Redis) via API
       const response = await fetch(`/api/tournament?id=${tournamentId}`);
-      
-      let data: Tournament | null = null;
-      
+
+      const local = getTournamentFromStorage(tournamentId);
+      let server: Tournament | null = null;
+
       if (response.ok) {
-        data = await response.json();
-      } else {
-        // 2. Fallback to localStorage if server fails or is slow
-        console.warn("Could not fetch from server, trying local storage...");
-        data = getTournamentFromStorage(tournamentId);
+        server = await response.json();
       }
+
+      // Prefer localStorage if it's newer (e.g. local-only mode)
+      const data =
+        local && (!server || local.totalVotes > server.totalVotes)
+          ? local
+          : server;
+
+      setStorageMode(data === local ? 'local' : server ? 'server' : null);
       
       if (data) {
         setTournament(data);
@@ -91,6 +97,11 @@ export default function ResultsPage() {
             <div>
               <h1 className="text-3xl md:text-5xl font-bold mb-2">{tournament.topic}</h1>
               <p className="text-gray-400">Live Leaderboard</p>
+              {storageMode === 'local' ? (
+                <p className="text-xs mt-2 text-yellow-400">
+                  Local-only mode: results are stored in your browser and won&apos;t sync across devices.
+                </p>
+              ) : null}
             </div>
             <div className="flex gap-3">
               <button

@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Tournament, Item } from '@/lib/types';
-import { getTournamentFromStorage } from '@/lib/storage';
+import { getTournamentFromStorage, updateTournamentInStorage } from '@/lib/storage';
+import { processVote } from '@/lib/elo';
 
 export default function VotePage() {
   const params = useParams();
@@ -15,6 +16,7 @@ export default function VotePage() {
   const [items, setItems] = useState<[Item, Item] | null>(null);
   const [loading, setLoading] = useState(true);
   const [voteCount, setVoteCount] = useState(0);
+  const [storageMode, setStorageMode] = useState<'server' | 'local' | null>(null);
 
   // Helper to pick 2 random different items
   const pickRandomPair = useCallback((itemList: Item[]) => {
@@ -35,13 +37,20 @@ export default function VotePage() {
   const loadTournament = useCallback(async () => {
     try {
       const response = await fetch(`/api/tournament?id=${tournamentId}`);
-      let data: Tournament | null = null;
-      
+      const local = getTournamentFromStorage(tournamentId);
+      let server: Tournament | null = null;
+
       if (response.ok) {
-        data = await response.json();
-      } else {
-        data = getTournamentFromStorage(tournamentId);
+        server = await response.json();
       }
+
+      // Prefer localStorage if it's newer (e.g. local-only mode or server DB down)
+      const data =
+        local && (!server || local.totalVotes > server.totalVotes)
+          ? local
+          : server;
+
+      setStorageMode(data === local ? 'local' : server ? 'server' : null);
 
       if (data) {
         setTournament(data);
@@ -64,26 +73,66 @@ export default function VotePage() {
   const handleVote = async (winnerId: string, loserId: string) => {
     if (!tournament) return;
 
-    // 1. Optimistic update (optional, but makes it feel fast)
-    setVoteCount(prev => prev + 1);
+    // -----------------------------------------------------------------------
+    // LocalStorage-first mode:
+    // Always apply the ELO update locally so voting works even when the
+    // server DB is unavailable (or when /api/vote fails in production).
+    // -----------------------------------------------------------------------
+    const winner = tournament.items.find(item => item.id === winnerId);
+    const loser = tournament.items.find(item => item.id === loserId);
+    if (!winner || !loser) return;
 
-    // 2. Send vote to API
+    const result = processVote(winnerId, loserId, winner.eloScore, loser.eloScore);
+
+    const updatedTournament: Tournament = {
+      ...tournament,
+      totalVotes: tournament.totalVotes + 1,
+      items: tournament.items.map(item => {
+        if (item.id === winnerId) {
+          return {
+            ...item,
+            eloScore: result.winnerNewScore,
+            wins: item.wins + 1,
+          };
+        }
+
+        if (item.id === loserId) {
+          return {
+            ...item,
+            eloScore: result.loserNewScore,
+            losses: item.losses + 1,
+          };
+        }
+
+        return item;
+      }),
+    };
+
+    setTournament(updatedTournament);
+    setVoteCount(updatedTournament.totalVotes);
+    updateTournamentInStorage(updatedTournament);
+
+    // Best-effort server persistence (ignored in localStorage-only mode)
     try {
-        await fetch('/api/vote', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                tournamentId,
-                winnerId,
-                loserId
-            })
-        });
+      const res = await fetch('/api/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tournamentId,
+          winnerId,
+          loserId,
+        }),
+      });
+
+      if (!res.ok) {
+        console.warn('Vote was applied locally, but server persistence failed.');
+      }
     } catch (e) {
-        console.error("Vote failed to record", e);
+      console.warn('Vote was applied locally, but server request failed.', e);
     }
 
-    // 3. Pick new pair immediately
-    const nextPair = pickRandomPair(tournament.items);
+    // Pick new pair immediately
+    const nextPair = pickRandomPair(updatedTournament.items);
     setItems(nextPair);
   };
 
@@ -137,6 +186,11 @@ export default function VotePage() {
           <div className="min-w-0">
             <h1 className="text-xl md:text-3xl font-bold truncate">{tournament.topic}</h1>
             <p className="text-xs md:text-sm text-gray-400 mt-1 hidden md:block">Choose your favorite (or use Arrow Keys)</p>
+            {storageMode === 'local' ? (
+              <p className="text-xs mt-1 text-yellow-400">
+                Local-only mode: this tournament is stored in your browser and won&apos;t work on other devices.
+              </p>
+            ) : null}
           </div>
           <button
             onClick={() => router.push(`/results/${tournamentId}`)}
