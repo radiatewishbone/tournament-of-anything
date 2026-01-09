@@ -57,7 +57,15 @@ function buildSvgFallbackDataUrl(label: string): string {
 
 function buildPollinationsUrl(prompt: string): string {
   const q = encodeURIComponent(prompt.trim() || 'image');
-  return `https://image.pollinations.ai/prompt/${q}?width=1024&height=1024&nologo=true`;
+
+  // Pollinations keys are typically publishable (pk_...) and can be used client-side.
+  // We include both common parameter names to be resilient to API variations.
+  const apiKey = process.env.NEXT_PUBLIC_POLLINATIONS_API_KEY?.trim();
+  const keyParams = apiKey
+    ? `&apikey=${encodeURIComponent(apiKey)}&key=${encodeURIComponent(apiKey)}`
+    : '';
+
+  return `https://image.pollinations.ai/prompt/${q}?width=1024&height=1024&nologo=true${keyParams}`;
 }
 
 export default function RemoteImage({
@@ -97,4 +105,3 @@ export default function RemoteImage({
 
   return <img src={currentSrc} alt={alt} onError={handleError} {...props} />;
 }
-
