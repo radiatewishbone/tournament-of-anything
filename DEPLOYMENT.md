@@ -38,16 +38,24 @@ The app also strips wrapping quotes at runtime, so both of these work:
 
 ## Optional AI environment variables
 
-If you want AI-generated contenders/images:
+If you want AI-generated contender *names*:
 
 ```env
 OPENAI_API_KEY=...
-GOOGLE_SEARCH_API_KEY=...
-GOOGLE_SEARCH_ENGINE_ID=...
 NEXT_PUBLIC_POLLINATIONS_API_KEY=pk_...
 ```
 
-If these are missing, the app falls back to default contenders.
+If `OPENAI_API_KEY` is missing, the app falls back to default contenders.
+
+### Image strategy (Wikipedia → Commons → Pollinations)
+
+On tournament creation, the server resolves each contender image in this order:
+
+1. English Wikipedia article lead image
+2. Wikimedia Commons image via Wikidata (P18)
+3. Pollinations (final fallback)
+
+The UI shows a per-item `Source:` link when available.
 
 Note: variables prefixed with `NEXT_PUBLIC_` are exposed to the browser.
 

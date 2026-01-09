@@ -1,7 +1,20 @@
+export type ImageSource =
+  | 'wikipedia'
+  | 'commons'
+  | 'pollinations'
+  | 'unsplash'
+  | 'google'
+  | 'placeholder'
+  | 'unknown';
+
 export interface Item {
   id: string;
   name: string;
   imageUrl: string;
+  /** Where the image came from (used for attribution UX). */
+  imageSource?: ImageSource;
+  /** A canonical attribution link (Wikipedia article, Commons file page, etc). */
+  imageSourceUrl?: string;
   eloScore: number;
   wins: number;
   losses: number;

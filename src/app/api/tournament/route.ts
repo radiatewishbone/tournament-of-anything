@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createTournament, getTournament } from '@/lib/database';
 import { generateDefaultContenders } from '@/lib/contenders';
 import { generateAIContenders } from '@/lib/ai';
+import { resolveImagesForItems } from '@/lib/wikimedia';
 
 // HELPER: Safely extract error messages without using 'any'
 function getErrorMessage(error: unknown): string {
@@ -77,6 +78,17 @@ export async function POST(request: NextRequest) {
         console.error(`[API][${requestId}] AI Generation Failed:`, aiError);
         console.log(`[API][${requestId}] Falling back to default contenders due to AI error.`);
         finalItems = generateDefaultContenders(topic);
+      }
+    }
+
+    // 3b. Resolve images (Wikipedia → Commons → Pollinations)
+    // Only run for auto-generated tournaments (topic-only requests).
+    if (!items || items.length === 0) {
+      try {
+        console.log(`[API][${requestId}] Resolving images via Wikipedia/Commons...`);
+        finalItems = await resolveImagesForItems(topic, finalItems);
+      } catch (imgError) {
+        console.error(`[API][${requestId}] Image resolution failed (continuing with existing image URLs):`, imgError);
       }
     }
 

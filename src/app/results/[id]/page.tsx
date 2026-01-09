@@ -88,6 +88,13 @@ export default function ResultsPage() {
   const minScore = leaderboard[leaderboard.length - 1]?.eloScore || 1500;
   const scoreRange = maxScore - minScore || 1;
 
+  const getSourceLabel = (source: string | undefined) => {
+    if (source === 'wikipedia') return 'Wikipedia';
+    if (source === 'commons') return 'Wikimedia Commons';
+    if (source === 'pollinations') return 'Pollinations';
+    return 'Source';
+  };
+
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
@@ -185,6 +192,16 @@ export default function ResultsPage() {
                         <span>W: <span className="text-green-400">{item.wins}</span></span>
                         <span>L: <span className="text-red-400">{item.losses}</span></span>
                       </div>
+                      {item.imageSourceUrl ? (
+                        <a
+                          href={item.imageSourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-block mt-1 text-xs text-gray-400 underline"
+                        >
+                          Source: {getSourceLabel(item.imageSource)}
+                        </a>
+                      ) : null}
                     </div>
                     
                     {/* Win Rate */}

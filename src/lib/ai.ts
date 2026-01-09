@@ -1,35 +1,16 @@
 import OpenAI from 'openai';
 
-// 1. Add your new keys to .env
-// GOOGLE_SEARCH_API_KEY=...
-// GOOGLE_SEARCH_ENGINE_ID=...
-
 interface AIItem {
   name: string;
-  searchQuery: string; // Changed from 'imagePrompt' to 'searchQuery'
 }
 
-// Helper to fetch one image from Google
-async function fetchGoogleImage(query: string): Promise<string> {
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
-  
-  if (!apiKey || !cx) return "https://via.placeholder.com/400?text=No+API+Key";
-
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&cx=${cx}&key=${apiKey}&searchType=image&num=1&safe=high`
-    );
-    
-    if (!res.ok) throw new Error("Google API Error");
-    
-    const data = await res.json();
-    // Return the first image link, or a fallback if none found
-    return data.items?.[0]?.link || `https://via.placeholder.com/400?text=${encodeURIComponent(query)}`;
-  } catch (error) {
-    console.error(`Failed to fetch image for ${query}:`, error);
-    return "https://via.placeholder.com/400?text=Error";
-  }
+function buildPollinationsUrl(prompt: string): string {
+  const q = encodeURIComponent(prompt.trim() || 'image');
+  const apiKey = process.env.NEXT_PUBLIC_POLLINATIONS_API_KEY?.trim();
+  const keyParams = apiKey
+    ? `&apikey=${encodeURIComponent(apiKey)}&key=${encodeURIComponent(apiKey)}`
+    : '';
+  return `https://image.pollinations.ai/prompt/${q}?width=1024&height=1024&nologo=true${keyParams}`;
 }
 
 export async function generateAIContenders(topic: string) {
@@ -46,8 +27,8 @@ export async function generateAIContenders(topic: string) {
         content: `You are a tournament organizer. 
         Output valid JSON only. 
         Root object must have an 'items' array. 
-        Each item has 'name' and 'searchQuery'.
-        'searchQuery' should be the best Google Image search term for that item (e.g. 'Darth Vader movie still').`
+        Each item must have a concise 'name' string.
+        Do not include extra fields.`
       },
       {
         role: "user",
@@ -62,18 +43,11 @@ export async function generateAIContenders(topic: string) {
   const parsed = JSON.parse(content);
   const items = parsed.items as AIItem[];
 
-  // 2. Fetch all images in PARALLEL (Crucial for speed)
-  // We use Promise.all to fire 16 requests at once, reducing wait time from ~10s to ~1s.
-  const contendersWithImages = await Promise.all(
-    items.map(async (item, index) => {
-      const imageUrl = await fetchGoogleImage(item.searchQuery);
-      return {
-        id: `ai-${index}-${Date.now()}`,
-        name: item.name,
-        imageUrl: imageUrl,
-      };
-    })
-  );
-
-  return contendersWithImages;
+  // 2. Return contenders with a placeholder image.
+  // The server will attempt to replace this with Wikipedia/Commons images.
+  return items.map((item, index) => ({
+    id: `ai-${index}-${Date.now()}`,
+    name: item.name,
+    imageUrl: buildPollinationsUrl(item.name),
+  }));
 }

@@ -178,6 +178,24 @@ export default function VotePage() {
 
   const [itemA, itemB] = items;
 
+  const sourceLabelA =
+    itemA.imageSource === 'wikipedia'
+      ? 'Wikipedia'
+      : itemA.imageSource === 'commons'
+        ? 'Wikimedia Commons'
+        : itemA.imageSource === 'pollinations'
+          ? 'Pollinations'
+          : 'Source';
+
+  const sourceLabelB =
+    itemB.imageSource === 'wikipedia'
+      ? 'Wikipedia'
+      : itemB.imageSource === 'commons'
+        ? 'Wikimedia Commons'
+        : itemB.imageSource === 'pollinations'
+          ? 'Pollinations'
+          : 'Source';
+
   return (
     <div className="h-screen max-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col overflow-hidden">
       {/* Header */}
@@ -228,6 +246,17 @@ export default function VotePage() {
           <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 text-left pointer-events-none z-20">
             <h2 className="text-2xl md:text-5xl font-bold mb-1 md:mb-2 drop-shadow-lg leading-tight">{itemA.name}</h2>
             <p className="text-xs md:text-base text-gray-300 opacity-80">Click or Press Left Arrow</p>
+            {itemA.imageSourceUrl ? (
+              <a
+                href={itemA.imageSourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="pointer-events-auto text-xs text-gray-200/80 underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Source: {sourceLabelA}
+              </a>
+            ) : null}
           </div>
         </button>
 
@@ -267,6 +296,17 @@ export default function VotePage() {
             <div className="flex flex-col items-end md:items-start">
                 <h2 className="text-2xl md:text-5xl font-bold mb-1 md:mb-2 drop-shadow-lg leading-tight">{itemB.name}</h2>
                 <p className="text-xs md:text-base text-gray-300 opacity-80">Click or Press Right Arrow</p>
+                {itemB.imageSourceUrl ? (
+                  <a
+                    href={itemB.imageSourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="pointer-events-auto text-xs text-gray-200/80 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Source: {sourceLabelB}
+                  </a>
+                ) : null}
             </div>
           </div>
         </button>
