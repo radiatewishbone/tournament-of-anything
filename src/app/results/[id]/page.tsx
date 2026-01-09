@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { Tournament, Item } from '@/lib/types';
 import { getTournamentFromStorage } from '@/lib/storage';
+import RemoteImage from '@/components/RemoteImage';
 
 export default function ResultsPage() {
   const params = useParams();
@@ -168,13 +168,12 @@ export default function ResultsPage() {
                     
                     {/* Image - UPDATED */}
                     <div className="w-16 h-16 md:w-20 md:h-20 rounded-lg overflow-hidden flex-shrink-0 border-2 border-[var(--border)] relative">
-                      <Image
+                      <RemoteImage
                         src={item.imageUrl}
                         alt={item.name}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                        sizes="(max-width: 768px) 64px, 80px"
+                        fallbackText={item.name}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
                       />
                     </div>
                     

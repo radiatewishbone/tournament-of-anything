@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { Tournament, Item } from '@/lib/types';
 import { getTournamentFromStorage, updateTournamentInStorage } from '@/lib/storage';
 import { processVote } from '@/lib/elo';
+import RemoteImage from '@/components/RemoteImage';
 
 export default function VotePage() {
   const params = useParams();
@@ -212,17 +212,16 @@ export default function VotePage() {
           {/* Hover Overlay */}
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20"></div>
           
-          {/* Image - UPDATED */}
-          <div className="absolute inset-0">
-             <Image
+           {/* Image - UPDATED */}
+           <div className="absolute inset-0">
+              <RemoteImage
                 src={itemA.imageUrl}
                 alt={itemA.name}
-                fill
-                className="object-cover transition-transform duration-700 group-hover:scale-105"
-                unoptimized
-                priority
-             />
-          </div>
+                fallbackText={itemA.name}
+                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                loading="eager"
+              />
+           </div>
 
           {/* Text Overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10"></div>
@@ -251,17 +250,16 @@ export default function VotePage() {
           {/* Hover Overlay */}
           <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20"></div>
 
-          {/* Image - UPDATED */}
-          <div className="absolute inset-0">
-             <Image
+           {/* Image - UPDATED */}
+           <div className="absolute inset-0">
+              <RemoteImage
                 src={itemB.imageUrl}
                 alt={itemB.name}
-                fill
-                className="object-cover transition-transform duration-700 group-hover:scale-105"
-                unoptimized
-                priority
-             />
-          </div>
+                fallbackText={itemB.name}
+                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                loading="eager"
+              />
+           </div>
 
           {/* Text Overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10"></div>
