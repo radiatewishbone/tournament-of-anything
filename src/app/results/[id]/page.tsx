@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Tournament, Item } from '@/lib/types';
-// DELETE: import { getTournament } from '@/lib/database'; <-- This was causing the crash
 import { getTournamentFromStorage } from '@/lib/storage';
 
 export default function ResultsPage() {
@@ -155,13 +155,15 @@ export default function ResultsPage() {
                       {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
                     </div>
                     
-                    {/* Image */}
-                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-lg overflow-hidden flex-shrink-0 border-2 border-[var(--border)]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                    {/* Image - UPDATED */}
+                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-lg overflow-hidden flex-shrink-0 border-2 border-[var(--border)] relative">
+                      <Image
                         src={item.imageUrl}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        fill
+                        className="object-cover"
+                        unoptimized
+                        sizes="(max-width: 768px) 64px, 80px"
                       />
                     </div>
                     

@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Tournament, Item } from '@/lib/types';
-// DELETE: import { getTournament } from '@/lib/database';  <-- This was causing the crash
-import { getTournamentFromStorage, updateTournamentInStorage } from '@/lib/storage';
+import { getTournamentFromStorage } from '@/lib/storage';
 
 export default function VotePage() {
   const params = useParams();
@@ -12,60 +12,42 @@ export default function VotePage() {
   const tournamentId = params.id as string;
   
   const [tournament, setTournament] = useState<Tournament | null>(null);
-  const [currentPair, setCurrentPair] = useState<[Item, Item] | null>(null);
-  const [nextPair, setNextPair] = useState<[Item, Item] | null>(null);
-  const [voteCount, setVoteCount] = useState(0);
+  const [items, setItems] = useState<[Item, Item] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [voteCount, setVoteCount] = useState(0);
 
-  // Helper to get random pair, optionally excluding specific items to avoid repeats
-  const getRandomPair = useCallback((items: Item[], excludeIds: string[] = []): [Item, Item] | null => {
-    // FIX: Added safety check for undefined items
-    if (!items || items.length < 2) return null;
+  // Helper to pick 2 random different items
+  const pickRandomPair = useCallback((itemList: Item[]) => {
+    if (itemList.length < 2) return null;
     
-    // Filter out excluded items (optional, helps reduce immediate repeats)
-    const pool = items.filter(item => !excludeIds.includes(item.id));
-    // If pool is too small, fallback to full list
-    const candidates = pool.length >= 2 ? pool : items;
+    // Simple random selection
+    const idx1 = Math.floor(Math.random() * itemList.length);
+    let idx2 = Math.floor(Math.random() * itemList.length);
     
-    const shuffled = [...candidates].sort(() => Math.random() - 0.5);
-    return [shuffled[0], shuffled[1]];
-  }, []);
-
-  // Preload images for the next pair so they appear instantly
-  useEffect(() => {
-    if (nextPair) {
-      const img1 = new Image();
-      const img2 = new Image();
-      img1.src = nextPair[0].imageUrl;
-      img2.src = nextPair[1].imageUrl;
+    // Ensure they are different
+    while (idx1 === idx2) {
+      idx2 = Math.floor(Math.random() * itemList.length);
     }
-  }, [nextPair]);
+    
+    return [itemList[idx1], itemList[idx2]] as [Item, Item];
+  }, []);
 
   const loadTournament = useCallback(async () => {
     try {
-      // 1. Try to fetch from the server (Redis) via API
       const response = await fetch(`/api/tournament?id=${tournamentId}`);
-      
       let data: Tournament | null = null;
       
       if (response.ok) {
         data = await response.json();
       } else {
-        // 2. Fallback to localStorage if server fails or is slow
-        console.warn("Could not fetch from server, trying local storage...");
         data = getTournamentFromStorage(tournamentId);
       }
-      
+
       if (data) {
         setTournament(data);
-        
-        // Initialize both current and next pair for "snappy" feel
-        const firstPair = getRandomPair(data.items);
-        setCurrentPair(firstPair);
-        
-        if (firstPair) {
-          const secondPair = getRandomPair(data.items, [firstPair[0].id, firstPair[1].id]);
-          setNextPair(secondPair);
+        setVoteCount(data.totalVotes);
+        if (!items) {
+          setItems(pickRandomPair(data.items));
         }
       }
     } catch (error) {
@@ -73,78 +55,49 @@ export default function VotePage() {
     } finally {
       setLoading(false);
     }
-  }, [tournamentId, getRandomPair]);
+  }, [tournamentId, items, pickRandomPair]);
 
   useEffect(() => {
     loadTournament();
   }, [loadTournament]);
 
-  const cyclePairs = useCallback(() => {
-    if (!tournament || !nextPair) return;
-    
-    // 1. Move next pair to current (Instant UI update)
-    setCurrentPair(nextPair);
-    
-    // 2. Generate a new next pair in the background
-    const newNext = getRandomPair(tournament.items, [nextPair[0].id, nextPair[1].id]);
-    setNextPair(newNext);
-  }, [tournament, nextPair, getRandomPair]);
-
-  const handleVote = useCallback(async (winnerId: string, loserId: string) => {
+  const handleVote = async (winnerId: string, loserId: string) => {
     if (!tournament) return;
-    
-    // Optimistic UI update
-    setVoteCount(prev => prev + 1);
-    cyclePairs();
 
-    // Fire and forget the API call
+    // 1. Optimistic update (optional, but makes it feel fast)
+    setVoteCount(prev => prev + 1);
+
+    // 2. Send vote to API
     try {
-      const response = await fetch('/api/vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentId, winnerId, loserId }),
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Update local storage in background
-        const updatedTournament = { ...tournament };
-        const winnerItem = updatedTournament.items.find(item => item.id === winnerId);
-        const loserItem = updatedTournament.items.find(item => item.id === loserId);
-        
-        if (winnerItem && loserItem && data.result) {
-          winnerItem.eloScore = data.result.winnerNewScore;
-          winnerItem.wins += 1;
-          loserItem.eloScore = data.result.loserNewScore;
-          loserItem.losses += 1;
-          updatedTournament.totalVotes += 1;
-          
-          updateTournamentInStorage(updatedTournament);
-          // Silently update state to keep math accurate
-          setTournament(updatedTournament);
-        }
-      }
-    } catch (error) {
-      console.error('Error recording vote:', error);
+        await fetch('/api/vote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tournamentId,
+                winnerId,
+                loserId
+            })
+        });
+    } catch (e) {
+        console.error("Vote failed to record", e);
     }
-  }, [tournament, cyclePairs, tournamentId]);
+
+    // 3. Pick new pair immediately
+    const nextPair = pickRandomPair(tournament.items);
+    setItems(nextPair);
+  };
 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!currentPair) return;
-      
-      if (e.key === 'ArrowLeft') {
-        handleVote(currentPair[0].id, currentPair[1].id);
-      } else if (e.key === 'ArrowRight') {
-        handleVote(currentPair[1].id, currentPair[0].id);
-      }
+      if (!items) return;
+      if (e.key === 'ArrowLeft') handleVote(items[0].id, items[1].id);
+      if (e.key === 'ArrowRight') handleVote(items[1].id, items[0].id);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPair, handleVote]);
+  }, [items, tournament]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -157,7 +110,7 @@ export default function VotePage() {
     );
   }
 
-  if (!tournament || !currentPair) {
+  if (!tournament || !items) {
     return (
       <div className="min-h-screen bg-[var(--background)] flex items-center justify-center p-4">
         <div className="text-center">
@@ -174,10 +127,9 @@ export default function VotePage() {
     );
   }
 
-  const [itemA, itemB] = currentPair;
+  const [itemA, itemB] = items;
 
   return (
-    // Fixed height screen container to prevent mobile scrolling
     <div className="h-screen max-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col overflow-hidden">
       {/* Header */}
       <header className="shrink-0 p-4 md:p-6 border-b border-[var(--border)] z-20 bg-[var(--background)]">
@@ -190,56 +142,76 @@ export default function VotePage() {
             onClick={() => router.push(`/results/${tournamentId}`)}
             className="shrink-0 px-3 py-1.5 md:px-4 md:py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-colors text-sm md:text-base"
           >
-            See Results
+            View Results
           </button>
         </div>
       </header>
 
-      {/* Arena - Uses flex-1 to fill exactly the remaining space */}
+      {/* Battle Arena */}
       <div className="flex-1 flex flex-col md:flex-row items-stretch min-h-0">
-        {/* Item A */}
+        
+        {/* Left Option */}
         <button
           onClick={() => handleVote(itemA.id, itemB.id)}
           className="flex-1 relative group overflow-hidden transition-all duration-300 hover:brightness-110 active:scale-[0.98] outline-none focus-visible:ring-4 ring-blue-500"
-          aria-label={`Vote for ${itemA.name}`}
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-          <div 
-            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
-            style={{ backgroundImage: `url(${itemA.imageUrl})` }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 text-left pointer-events-none">
+          {/* Hover Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20"></div>
+          
+          {/* Image - UPDATED */}
+          <div className="absolute inset-0">
+             <Image
+                src={itemA.imageUrl}
+                alt={itemA.name}
+                fill
+                className="object-cover transition-transform duration-700 group-hover:scale-105"
+                unoptimized
+                priority
+             />
+          </div>
+
+          {/* Text Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10"></div>
+          <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 text-left pointer-events-none z-20">
             <h2 className="text-2xl md:text-5xl font-bold mb-1 md:mb-2 drop-shadow-lg leading-tight">{itemA.name}</h2>
             <p className="text-xs md:text-base text-gray-300 opacity-80">Click or Press Left Arrow</p>
           </div>
         </button>
 
-        {/* VS Divider / Controls */}
-        <div className="shrink-0 flex flex-row md:flex-col items-center justify-between md:justify-center bg-[var(--card)] border-y md:border-y-0 md:border-x border-[var(--border)] p-2 md:w-24 z-10 relative shadow-xl">
+        {/* VS Badge */}
+        <div className="shrink-0 flex flex-row md:flex-col items-center justify-between md:justify-center bg-[var(--card)] border-y md:border-y-0 md:border-x border-[var(--border)] p-2 md:w-24 z-30 relative shadow-xl">
            <div className="text-xl md:text-4xl font-black text-gray-600 md:rotate-90 select-none">VS</div>
-           
            <button 
-             onClick={cyclePairs}
+             onClick={() => setItems(pickRandomPair(tournament.items))}
              className="md:mt-4 px-3 py-1 rounded-full border border-gray-600 text-xs md:text-sm text-gray-400 hover:text-white hover:border-white hover:bg-gray-800 transition-all whitespace-nowrap"
            >
              Skip
            </button>
         </div>
 
-        {/* Item B */}
+        {/* Right Option */}
         <button
           onClick={() => handleVote(itemB.id, itemA.id)}
           className="flex-1 relative group overflow-hidden transition-all duration-300 hover:brightness-110 active:scale-[0.98] outline-none focus-visible:ring-4 ring-purple-500"
-          aria-label={`Vote for ${itemB.name}`}
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-          <div 
-            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
-            style={{ backgroundImage: `url(${itemB.imageUrl})` }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 text-right md:text-left pointer-events-none">
+          {/* Hover Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20"></div>
+
+          {/* Image - UPDATED */}
+          <div className="absolute inset-0">
+             <Image
+                src={itemB.imageUrl}
+                alt={itemB.name}
+                fill
+                className="object-cover transition-transform duration-700 group-hover:scale-105"
+                unoptimized
+                priority
+             />
+          </div>
+
+          {/* Text Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10"></div>
+          <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 text-right md:text-left pointer-events-none z-20">
             <div className="flex flex-col items-end md:items-start">
                 <h2 className="text-2xl md:text-5xl font-bold mb-1 md:mb-2 drop-shadow-lg leading-tight">{itemB.name}</h2>
                 <p className="text-xs md:text-base text-gray-300 opacity-80">Click or Press Right Arrow</p>
@@ -248,7 +220,7 @@ export default function VotePage() {
         </button>
       </div>
 
-      {/* Progress Bar */}
+      {/* Footer Stats */}
       <div className="shrink-0 bg-[var(--card)] border-t border-[var(--border)] p-3 md:p-4 z-20">
         <div className="max-w-7xl mx-auto">
           <div className="flex justify-between items-center mb-2">
@@ -258,7 +230,7 @@ export default function VotePage() {
           <div className="w-full bg-[var(--background)] rounded-full h-1.5 md:h-2 overflow-hidden">
             <div 
               className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-500 ease-out"
-              style={{ width: `${Math.min((voteCount / 20) * 100, 100)}%` }}
+              style={{ width: `${Math.min((voteCount / 100) * 100, 100)}%` }} // Arbitrary progress bar
             ></div>
           </div>
         </div>
