@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { saveTournamentToStorage } from '@/lib/storage'; // Import this utility
 
 export default function Home() {
   const router = useRouter();
@@ -13,7 +14,6 @@ export default function Home() {
     
     setIsGenerating(true);
     try {
-      // Call the API to generate items (using AI or fallback)
       const response = await fetch('/api/tournament', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -21,8 +21,14 @@ export default function Home() {
       });
       
       const data = await response.json();
+      
       if (data.success) {
-        // Redirect to the voting arena
+        // CRITICAL FIX: Save the tournament to localStorage immediately.
+        // This ensures the data survives even if the server memory is wiped.
+        if (data.tournament) {
+          saveTournamentToStorage(data.tournament);
+        }
+
         router.push(`/vote/${data.tournamentId}`);
       }
     } catch (error) {
@@ -53,7 +59,7 @@ export default function Home() {
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., Best 90s Rappers, Weirdest Pokemon, Top Sci-Fi Movies..."
+              placeholder="e.g., Best 80s Cartoons, Top Sci-Fi Movies..."
               className="w-full px-4 py-3 bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500"
               onKeyDown={(e) => e.key === 'Enter' && !isGenerating && handleCreateTournament()}
             />
@@ -76,7 +82,7 @@ export default function Home() {
         </div>
 
         <footer className="text-center mt-12 text-gray-500 text-sm">
-          <p>Powered by Google Gemini & Pollinations.ai</p>
+          <p>Powered by OpenAI & Pollinations.ai</p>
         </footer>
       </div>
     </div>

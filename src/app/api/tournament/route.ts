@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createTournament } from '@/lib/database';
-import { generateDefaultContenders } from '@/lib/contenders'; //
+import { createTournament, getTournament } from '@/lib/database'; // Import getTournament
+import { generateDefaultContenders } from '@/lib/contenders';
 import { generateAIContenders } from '@/lib/ai';
 
+// NEW: Add a GET handler to fetch tournament data
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
+
+  if (!id) {
+    return NextResponse.json({ error: 'Tournament ID is required' }, { status: 400 });
+  }
+
+  try {
+    const tournament = await getTournament(id);
+    
+    if (!tournament) {
+      return NextResponse.json({ error: 'Tournament not found' }, { status: 404 });
+    }
+
+    return NextResponse.json(tournament);
+  } catch (error) {
+    console.error('Error fetching tournament:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+// Existing POST handler...
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -14,24 +38,21 @@ export async function POST(request: NextRequest) {
     
     let finalItems = items;
 
-    // If no manual items provided, try AI generation
     if (!finalItems || finalItems.length === 0) {
-      // 1. Try AI Generation
       const aiItems = await generateAIContenders(topic);
-      
       if (aiItems) {
         finalItems = aiItems;
       } else {
-        // 2. Fallback to static list if AI fails
         finalItems = generateDefaultContenders(topic);
       }
     }
     
-    const tournament = createTournament(topic, finalItems);
+    const tournament = await createTournament(topic, finalItems);
     
     return NextResponse.json({ 
       success: true, 
-      tournamentId: tournament.id 
+      tournamentId: tournament.id,
+      tournament: tournament 
     });
   } catch (error) {
     console.error('Error creating tournament:', error);

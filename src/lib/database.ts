@@ -1,9 +1,13 @@
+import { Redis } from '@upstash/redis';
 import { Tournament, Item } from './types';
 
-// In-memory database
-const tournaments = new Map<string, Tournament>();
+// Initialize Redis client
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
-export function createTournament(topic: string, items: Omit<Item, 'eloScore' | 'wins' | 'losses'>[]): Tournament {
+export async function createTournament(topic: string, items: Omit<Item, 'eloScore' | 'wins' | 'losses'>[]): Promise<Tournament> {
   const id = generateId();
   
   const tournament: Tournament = {
@@ -19,24 +23,28 @@ export function createTournament(topic: string, items: Omit<Item, 'eloScore' | '
     totalVotes: 0,
   };
   
-  tournaments.set(id, tournament);
+  // Save to Redis (Key: "tournament:xyz123")
+  await redis.set(`tournament:${id}`, tournament);
   return tournament;
 }
 
-export function getTournament(id: string): Tournament | undefined {
-  return tournaments.get(id);
+export async function getTournament(id: string): Promise<Tournament | null> {
+  // Fetch from Redis
+  return await redis.get(`tournament:${id}`);
 }
 
-export function updateItemScores(
+export async function updateItemScores(
   tournamentId: string,
   winnerId: string,
   loserId: string,
   winnerNewScore: number,
   loserNewScore: number
-): void {
-  const tournament = tournaments.get(tournamentId);
+): Promise<void> {
+  // 1. Get current data
+  const tournament = await getTournament(tournamentId);
   if (!tournament) return;
   
+  // 2. Update local object
   const winnerItem = tournament.items.find(item => item.id === winnerId);
   const loserItem = tournament.items.find(item => item.id === loserId);
   
@@ -46,11 +54,14 @@ export function updateItemScores(
     loserItem.eloScore = loserNewScore;
     loserItem.losses += 1;
     tournament.totalVotes += 1;
+    
+    // 3. Save updated object back to Redis
+    await redis.set(`tournament:${tournamentId}`, tournament);
   }
 }
 
-export function getLeaderboard(tournamentId: string): Item[] {
-  const tournament = tournaments.get(tournamentId);
+export async function getLeaderboard(tournamentId: string): Promise<Item[]> {
+  const tournament = await getTournament(tournamentId);
   if (!tournament) return [];
   
   return [...tournament.items].sort((a, b) => b.eloScore - a.eloScore);

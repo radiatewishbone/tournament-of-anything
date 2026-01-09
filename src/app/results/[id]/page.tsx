@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Tournament, Item } from '@/lib/types';
-import { getTournament } from '@/lib/database';
+// DELETE: import { getTournament } from '@/lib/database'; <-- This was causing the crash
 import { getTournamentFromStorage } from '@/lib/storage';
 
 export default function ResultsPage() {
@@ -15,36 +15,40 @@ export default function ResultsPage() {
   const [leaderboard, setLeaderboard] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadResults = () => {
-    // Try server-side first
-    let data = getTournament(tournamentId);
-    
-    // Fallback to localStorage if server data not available
-    if (!data) {
-      const storedData = getTournamentFromStorage(tournamentId);
-      if (storedData) {
-        data = storedData;
+  const loadResults = useCallback(async () => {
+    try {
+      // 1. Try to fetch from the server (Redis) via API
+      const response = await fetch(`/api/tournament?id=${tournamentId}`);
+      
+      let data: Tournament | null = null;
+      
+      if (response.ok) {
+        data = await response.json();
+      } else {
+        // 2. Fallback to localStorage if server fails or is slow
+        console.warn("Could not fetch from server, trying local storage...");
+        data = getTournamentFromStorage(tournamentId);
       }
-    }
-    
-    if (data) {
-      setTournament(data);
-      // Sort items by ELO score for leaderboard
-      const sorted = [...data.items].sort((a, b) => b.eloScore - a.eloScore);
-      setLeaderboard(sorted);
+      
+      if (data) {
+        setTournament(data);
+        // Sort items by ELO score for leaderboard
+        const sorted = [...data.items].sort((a, b) => b.eloScore - a.eloScore);
+        setLeaderboard(sorted);
+      }
+    } catch (error) {
+      console.error("Error loading results:", error);
+    } finally {
       setLoading(false);
-    } else {
-      setLoading(false);
     }
-  };
+  }, [tournamentId]);
 
   useEffect(() => {
     loadResults();
     // Auto-refresh every 3 seconds for live updates
     const interval = setInterval(loadResults, 3000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tournamentId]);
+  }, [loadResults]);
 
   if (loading) {
     return (

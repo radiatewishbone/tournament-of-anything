@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Tournament, Item } from '@/lib/types';
-import { getTournament } from '@/lib/database';
+// DELETE: import { getTournament } from '@/lib/database';  <-- This was causing the crash
 import { getTournamentFromStorage, updateTournamentInStorage } from '@/lib/storage';
 
 export default function VotePage() {
@@ -16,14 +16,11 @@ export default function VotePage() {
   const [nextPair, setNextPair] = useState<[Item, Item] | null>(null);
   const [voteCount, setVoteCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  
-  // Use a ref to track if we are currently submitting to prevent double-counting 
-  // while still allowing the UI to remain snappy/interactive
-  const isSubmittingRef = useRef(false);
 
   // Helper to get random pair, optionally excluding specific items to avoid repeats
   const getRandomPair = useCallback((items: Item[], excludeIds: string[] = []): [Item, Item] | null => {
-    if (items.length < 2) return null;
+    // FIX: Added safety check for undefined items
+    if (!items || items.length < 2) return null;
     
     // Filter out excluded items (optional, helps reduce immediate repeats)
     const pool = items.filter(item => !excludeIds.includes(item.id));
@@ -44,32 +41,36 @@ export default function VotePage() {
     }
   }, [nextPair]);
 
-  const loadTournament = useCallback(() => {
-    // Try server-side first
-    let data = getTournament(tournamentId);
-    
-    // Fallback to localStorage
-    if (!data) {
-      const storedData = getTournamentFromStorage(tournamentId);
-      if (storedData) {
-        data = storedData;
-      }
-    }
-    
-    if (data) {
-      setTournament(data);
+  const loadTournament = useCallback(async () => {
+    try {
+      // 1. Try to fetch from the server (Redis) via API
+      const response = await fetch(`/api/tournament?id=${tournamentId}`);
       
-      // Initialize both current and next pair for "snappy" feel
-      const firstPair = getRandomPair(data.items);
-      setCurrentPair(firstPair);
+      let data: Tournament | null = null;
       
-      if (firstPair) {
-        const secondPair = getRandomPair(data.items, [firstPair[0].id, firstPair[1].id]);
-        setNextPair(secondPair);
+      if (response.ok) {
+        data = await response.json();
+      } else {
+        // 2. Fallback to localStorage if server fails or is slow
+        console.warn("Could not fetch from server, trying local storage...");
+        data = getTournamentFromStorage(tournamentId);
       }
       
-      setLoading(false);
-    } else {
+      if (data) {
+        setTournament(data);
+        
+        // Initialize both current and next pair for "snappy" feel
+        const firstPair = getRandomPair(data.items);
+        setCurrentPair(firstPair);
+        
+        if (firstPair) {
+          const secondPair = getRandomPair(data.items, [firstPair[0].id, firstPair[1].id]);
+          setNextPair(secondPair);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading tournament:", error);
+    } finally {
       setLoading(false);
     }
   }, [tournamentId, getRandomPair]);
@@ -78,19 +79,18 @@ export default function VotePage() {
     loadTournament();
   }, [loadTournament]);
 
-  const cyclePairs = () => {
+  const cyclePairs = useCallback(() => {
     if (!tournament || !nextPair) return;
     
     // 1. Move next pair to current (Instant UI update)
     setCurrentPair(nextPair);
     
     // 2. Generate a new next pair in the background
-    // Exclude the new current pair to avoid immediate repeats
     const newNext = getRandomPair(tournament.items, [nextPair[0].id, nextPair[1].id]);
     setNextPair(newNext);
-  };
+  }, [tournament, nextPair, getRandomPair]);
 
-  const handleVote = async (winnerId: string, loserId: string) => {
+  const handleVote = useCallback(async (winnerId: string, loserId: string) => {
     if (!tournament) return;
     
     // Optimistic UI update
@@ -119,8 +119,8 @@ export default function VotePage() {
           loserItem.eloScore = data.result.loserNewScore;
           loserItem.losses += 1;
           updatedTournament.totalVotes += 1;
-          updateTournamentInStorage(updatedTournament);
           
+          updateTournamentInStorage(updatedTournament);
           // Silently update state to keep math accurate
           setTournament(updatedTournament);
         }
@@ -128,7 +128,7 @@ export default function VotePage() {
     } catch (error) {
       console.error('Error recording vote:', error);
     }
-  };
+  }, [tournament, cyclePairs, tournamentId]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -144,7 +144,7 @@ export default function VotePage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPair, handleVote]); // Re-binds when pair changes
+  }, [currentPair, handleVote]);
 
   if (loading) {
     return (

@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const tournament = getTournament(tournamentId);
+    // CHANGE: Added await because database fetch is now async (Redis)
+    const tournament = await getTournament(tournamentId);
     if (!tournament) {
       return NextResponse.json(
         { error: 'Tournament not found' },
@@ -39,7 +40,8 @@ export async function POST(request: NextRequest) {
       loser.eloScore
     );
     
-    updateItemScores(
+    // CHANGE: Added await because database update is now async (Redis)
+    await updateItemScores(
       tournamentId,
       winnerId,
       loserId,
