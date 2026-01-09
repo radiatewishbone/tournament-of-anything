@@ -1,26 +1,28 @@
 import OpenAI from 'openai';
 
-// Initialize OpenAI client
-// Note: This requires OPENAI_API_KEY in your .env.local file
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// FIX: Remove top-level initialization that requires the key immediately
+// const openai = new OpenAI({ ... }); <--- This was causing the build error
 
-// Interface for TypeScript safety
 interface AIItem {
   name: string;
   imagePrompt: string;
 }
 
 export async function generateAIContenders(topic: string) {
+  // Check for key inside the function execution, not at file load
   if (!process.env.OPENAI_API_KEY) {
     console.warn("OPENAI_API_KEY is missing. Falling back to default data.");
     return null;
   }
 
+  // Initialize client only when needed
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Fast, cheap, and smart enough for this task
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
@@ -35,7 +37,7 @@ export async function generateAIContenders(topic: string) {
           For the 'imagePrompt', provide a detailed visual description suitable for AI image generation (visuals only, no text).`
         }
       ],
-      response_format: { type: "json_object" }, // Enforces valid JSON
+      response_format: { type: "json_object" },
     });
 
     const content = completion.choices[0].message.content;
@@ -43,7 +45,6 @@ export async function generateAIContenders(topic: string) {
 
     const parsed = JSON.parse(content);
     
-    // Validate we got the array we expect
     if (!parsed.items || !Array.isArray(parsed.items)) {
       console.error("OpenAI returned unexpected structure:", parsed);
       return null;
@@ -51,9 +52,6 @@ export async function generateAIContenders(topic: string) {
 
     const items = parsed.items as AIItem[];
 
-    // Transform into the app's internal format
-    // We still use Pollinations.ai for images because DALL-E 3 is expensive ($0.04/image)
-    // whereas Pollinations is free.
     return items.map((item, index) => ({
       id: `ai-${index}-${Date.now()}`,
       name: item.name,
@@ -62,6 +60,6 @@ export async function generateAIContenders(topic: string) {
 
   } catch (error) {
     console.error("OpenAI Generation Failed:", error);
-    return null; // Triggers fallback to hardcoded list
+    return null;
   }
 }

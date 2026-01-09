@@ -1,21 +1,25 @@
 import { Redis } from '@upstash/redis';
 import { Tournament, Item } from './types';
 
-// Initialize Redis client
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+// FIX: Do not crash if keys are missing during build
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+  : null; // Return null instead of crashing
 
 export async function createTournament(topic: string, items: Omit<Item, 'eloScore' | 'wins' | 'losses'>[]): Promise<Tournament> {
+  // Safety check inside the function
+  if (!redis) throw new Error("Database credentials missing");
+
   const id = generateId();
-  
   const tournament: Tournament = {
     id,
     topic,
     items: items.map(item => ({
       ...item,
-      eloScore: 1500, // Standard starting ELO
+      eloScore: 1500,
       wins: 0,
       losses: 0,
     })),
@@ -23,13 +27,12 @@ export async function createTournament(topic: string, items: Omit<Item, 'eloScor
     totalVotes: 0,
   };
   
-  // Save to Redis (Key: "tournament:xyz123")
   await redis.set(`tournament:${id}`, tournament);
   return tournament;
 }
 
 export async function getTournament(id: string): Promise<Tournament | null> {
-  // Fetch from Redis
+  if (!redis) return null; // Fail gracefully if no DB
   return await redis.get(`tournament:${id}`);
 }
 
@@ -40,11 +43,11 @@ export async function updateItemScores(
   winnerNewScore: number,
   loserNewScore: number
 ): Promise<void> {
-  // 1. Get current data
+  if (!redis) return;
+
   const tournament = await getTournament(tournamentId);
   if (!tournament) return;
   
-  // 2. Update local object
   const winnerItem = tournament.items.find(item => item.id === winnerId);
   const loserItem = tournament.items.find(item => item.id === loserId);
   
@@ -55,7 +58,6 @@ export async function updateItemScores(
     loserItem.losses += 1;
     tournament.totalVotes += 1;
     
-    // 3. Save updated object back to Redis
     await redis.set(`tournament:${tournamentId}`, tournament);
   }
 }
@@ -63,7 +65,6 @@ export async function updateItemScores(
 export async function getLeaderboard(tournamentId: string): Promise<Item[]> {
   const tournament = await getTournament(tournamentId);
   if (!tournament) return [];
-  
   return [...tournament.items].sort((a, b) => b.eloScore - a.eloScore);
 }
 
