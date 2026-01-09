@@ -3,6 +3,12 @@ import { createTournament, getTournament } from '@/lib/database';
 import { generateDefaultContenders } from '@/lib/contenders';
 import { generateAIContenders } from '@/lib/ai';
 
+// HELPER: Safely extract error messages without using 'any'
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 // -----------------------------------------------------------------------------
 // GET Handler: Fetches a tournament by ID
 // -----------------------------------------------------------------------------
@@ -22,11 +28,11 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(tournament);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching tournament:', error);
     return NextResponse.json({ 
       error: 'Internal Server Error', 
-      details: error.message 
+      details: getErrorMessage(error)
     }, { status: 500 });
   }
 }
@@ -83,31 +89,33 @@ export async function POST(request: NextRequest) {
         tournament: tournament 
       });
 
-    } catch (dbError: any) {
+    } catch (dbError: unknown) {
       // 5. Handle Database Specific Errors
       console.error('[API] Database Error:', dbError);
       
+      const message = getErrorMessage(dbError);
+      
       // Check if it's the specific "Missing Credentials" error we added earlier
-      if (dbError.message && dbError.message.includes('Database credentials missing')) {
+      if (message.includes('Database credentials missing')) {
          return NextResponse.json({ 
            error: 'Server Configuration Error', 
            message: 'Database credentials (UPSTASH_REDIS_REST_URL) are missing on the server.',
-           details: dbError.message
+           details: message
          }, { status: 503 }); // 503 Service Unavailable
       }
 
       return NextResponse.json({ 
         error: 'Failed to save tournament', 
-        details: dbError.message 
+        details: message 
       }, { status: 500 });
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     // 6. Catch-all for unexpected crashes
     console.error('[API] Critical Error in POST handler:', error);
     return NextResponse.json({ 
       error: 'Internal Server Error',
-      details: error.message 
+      details: getErrorMessage(error) 
     }, { status: 500 });
   }
 }
